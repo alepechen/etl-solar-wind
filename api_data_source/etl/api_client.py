@@ -20,17 +20,7 @@ class ApiClientError(Exception):
 
 
 class ApiClient:
-    """Async HTTP client with automatic retries and content-type negotiation.
-
-    Intended to be used as an async context manager::
-
-        async with ApiClient(settings) as client:
-            df = await client.get_data("renewables/windgen.csv", date.today())
-
-    Args:
-        cfg: Application settings. Defaults to the module-level singleton.
-    """
-
+    
     def __init__(self, cfg: Settings = settings) -> None:
         self._base_url = cfg.DATA_SOURCE_BASE_URL.rstrip("/")
         self._api_key = cfg.API_KEY
@@ -45,10 +35,7 @@ class ApiClient:
             reraise=True,
         )
 
-    # ------------------------------------------------------------------
-    # Context-manager support
-    # ------------------------------------------------------------------
-
+   
     async def __aenter__(self) -> "ApiClient":
         return self
 
@@ -67,20 +54,7 @@ class ApiClient:
     async def _request(
         self, endpoint: str, requested_date: datetime.date
     ) -> httpx.Response:
-        """Send a GET request, retrying on transient failures.
-
-        Args:
-            endpoint: Path segment appended after the date, e.g.
-                ``"renewables/windgen.csv"``.
-            requested_date: The date for which data is requested.
-
-        Returns:
-            The raw :class:`httpx.Response`.
-
-        Raises:
-            httpx.HTTPStatusError: On 4xx/5xx responses after all retries.
-        """
-
+        
         @retry(**self._retry_cfg)
         async def _get() -> httpx.Response:
             url = f"{self._base_url}/{requested_date.isoformat()}/{endpoint}"
@@ -95,18 +69,6 @@ class ApiClient:
 
     @staticmethod
     def _parse_response(response: httpx.Response) -> pd.DataFrame:
-        """Deserialise a response into a :class:`~pandas.DataFrame`.
-
-        Args:
-            response: A successful HTTP response whose content-type is either
-                ``application/json`` or ``text/csv``.
-
-        Returns:
-            Parsed DataFrame.
-
-        Raises:
-            ApiClientError: If the content-type is not supported.
-        """
         content_type = response.headers.get("content-type", "")
 
         if "application/json" in content_type:
@@ -119,22 +81,11 @@ class ApiClient:
             f"Unsupported content-type '{content_type}' from {response.url}"
         )
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
+    
     async def get_data(
         self, endpoint: str, requested_date: datetime.date
     ) -> pd.DataFrame:
-        """Fetch and parse data for a single endpoint and date.
-
-        Args:
-            endpoint: API path segment, e.g. ``"renewables/windgen.csv"``.
-            requested_date: Calendar date to request.
-
-        Returns:
-            DataFrame containing the raw API response data.
-        """
+    
         response = await self._request(endpoint, requested_date)
         df = self._parse_response(response)
         logger.debug(
@@ -146,5 +97,4 @@ class ApiClient:
         return df
 
     async def close(self) -> None:
-        """Release underlying connection resources."""
         await self._client.aclose()
